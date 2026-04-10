@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tactical Command Display v2.3</title>
+    <title>Tactical Command Display v2.4</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root {
@@ -13,14 +13,11 @@
             --warhammer-red: #ff0000;
             --resource-gold: #f1c40f;
             --manpower-green: #2ecc71;
+            --text-dim: #a0a0a0;
         }
-        body { margin: 0; background: var(--bg-dark); color: #e0e0e0; font-family: 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+        body { margin: 0; background: var(--bg-dark); color: #e0e0e0; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         
-        #map-container { 
-            width: 100vw; height: 100vh; display: block; 
-            background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.03) 1px, transparent 0); 
-            background-size: 50px 50px; 
-        }
+        #map-container { width: 100vw; height: 100vh; display: block; background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.03) 1px, transparent 0); background-size: 50px 50px; }
 
         /* Planet Styling */
         .planet-node { cursor: pointer; }
@@ -35,13 +32,12 @@
             100% { filter: drop-shadow(0 0 2px var(--warhammer-red)); }
         }
 
-        /* Infobox Styling */
+        /* Infobox */
         #info-panel { 
             position: absolute; pointer-events: none; background: var(--panel-bg); 
             border: 1px solid var(--tactical-blue); padding: 18px; border-radius: 2px; 
-            display: none; min-width: 280px; z-index: 999;
-            box-shadow: 0 0 40px rgba(0,0,0,0.8);
-            backdrop-filter: blur(12px);
+            display: none; min-width: 300px; z-index: 999;
+            box-shadow: 0 0 40px rgba(0,0,0,0.9); backdrop-filter: blur(12px);
         }
 
         .panel-header { border-bottom: 2px solid var(--tactical-blue); margin-bottom: 12px; padding-bottom: 8px; }
@@ -49,34 +45,30 @@
         .contested-badge {
             color: var(--warhammer-red); font-size: 0.7em; font-weight: bold;
             border: 1px solid var(--warhammer-red); padding: 2px 6px;
-            margin-left: 10px; vertical-align: middle; letter-spacing: 1px;
-            background: rgba(255, 0, 0, 0.1);
+            margin-left: 10px; background: rgba(255, 0, 0, 0.1);
         }
 
-        .stat-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.85em; letter-spacing: 0.5px; }
-        .stat-label { opacity: 0.7; font-weight: bold; }
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.85em; }
         
-        /* Unit boxes (The "Gothic Boxes" you liked) */
+        /* Army/Fleet Boxes */
         .unit-item { 
-            padding: 8px; 
-            background: rgba(255,255,255,0.05); 
-            margin-bottom: 6px; 
-            border: 1px solid rgba(0, 210, 255, 0.3);
+            padding: 10px; background: rgba(255,255,255,0.03); 
+            margin-bottom: 8px; border: 1px solid rgba(0, 210, 255, 0.2);
             border-left: 4px solid var(--tactical-blue); 
-            font-size: 0.85em;
         }
+
+        /* Composition Sub-list */
+        .comp-list { margin-top: 8px; padding-left: 0; list-style: none; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 5px; }
+        .comp-entry { display: flex; justify-content: space-between; font-size: 0.8em; color: var(--text-dim); margin-bottom: 2px; }
+        .comp-name { text-transform: uppercase; letter-spacing: 0.5px; }
+        .comp-val { color: var(--tactical-blue); font-weight: bold; }
 
         #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; font-weight: bold; }
-        #debug-log { font-family: monospace; font-size: 12px; color: #666; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-<div id="loading-overlay">
-    <div>ESTABLISHING VOID-LINK...</div>
-    <div id="debug-log">Initialing systems...</div>
-</div>
-
+<div id="loading-overlay">ESTABLISHING VOID-LINK...</div>
 <div id="info-panel"></div>
 <svg id="map-container" viewBox="0 0 1000 1000"></svg>
 
@@ -85,27 +77,14 @@
     const UNITS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTtmIX95darstHqTgJ00Rp7LQhFNvJ0P-qVZ-ptGiKo3ZyYhHkw2ucJFvRDS8cpb9E0gH4m3-8CNCp9/pub?gid=2047054726&single=true&output=csv';
     const FLEET_ICON_URL = 'https://raw.githubusercontent.com/Nerdzul/MapTest/refs/heads/main/fleet_Icon_-svg.svg';
 
-    const debugEl = document.getElementById('debug-log');
-    function log(msg, isError = false) {
-        const span = document.createElement('div');
-        if(isError) span.style.color = 'red';
-        span.innerText = `> ${msg}`;
-        debugEl.appendChild(span);
-    }
-
-    let planetsData = [];
-    let unitsData = [];
-
     const getVal = (obj, key) => {
         if (!obj) return null;
         const found = Object.keys(obj).find(k => k.toLowerCase().trim() === key.toLowerCase());
         return found ? obj[found] : null;
     };
 
-    async function fetchCSV(url, name) {
-        log(`Fetching ${name}...`);
+    async function fetchCSV(url) {
         const response = await fetch(url);
-        if (!response.ok) throw new Error(`${name} fetch failed`);
         const csvText = await response.text();
         return new Promise((resolve) => {
             Papa.parse(csvText, { header: true, skipEmptyLines: true, complete: (res) => resolve(res.data) });
@@ -114,36 +93,25 @@
 
     async function init() {
         try {
-            [planetsData, unitsData] = await Promise.all([
-                fetchCSV(PLANETS_CSV_URL, "Planets"),
-                fetchCSV(UNITS_CSV_URL, "Units")
-            ]);
-            log(`Link Stable: ${planetsData.length} planets, ${unitsData.length} units.`);
+            [planetsData, unitsData] = await Promise.all([fetchCSV(PLANETS_CSV_URL), fetchCSV(UNITS_CSV_URL)]);
             renderMap();
             document.getElementById('loading-overlay').style.display = 'none';
-        } catch (e) {
-            log(`CRITICAL ERROR: ${e.message}`, true);
-        }
+        } catch (e) { console.error(e); }
     }
 
     function renderMap() {
         const svg = document.getElementById('map-container');
         svg.innerHTML = ''; 
-
         planetsData.forEach((p) => {
             const id = getVal(p, 'id');
             const x = parseFloat(getVal(p, 'x'));
             const y = parseFloat(getVal(p, 'y'));
             const color = getVal(p, 'hexcolor') || '#ffffff';
             const status = getVal(p, 'status');
-
             if (isNaN(x) || isNaN(y)) return;
 
             const localUnits = unitsData.filter(u => getVal(u, 'planetid') === id);
-            const hasFleets = localUnits.some(u => {
-                const type = getVal(u, 'type');
-                return type && type.toLowerCase().includes('fleet');
-            });
+            const hasFleets = localUnits.some(u => (getVal(u, 'type') || "").toLowerCase().includes('fleet'));
 
             const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
             g.setAttribute("class", "planet-node");
@@ -159,7 +127,6 @@
             text.setAttribute("class", "planet-label");
             text.textContent = (getVal(p, 'name') || 'Unknown').toUpperCase();
 
-            // Tactical Badge
             if (localUnits.length > 0) {
                 const bG = document.createElementNS("http://www.w3.org/2000/svg", "circle");
                 bG.setAttribute("cx", x + 18); bG.setAttribute("cy", y - 10); bG.setAttribute("r", 8);
@@ -185,7 +152,6 @@
             g.addEventListener('mouseenter', (e) => showPanel(e, p, localUnits));
             g.addEventListener('mousemove', movePanel);
             g.addEventListener('mouseleave', hidePanel);
-
             g.appendChild(circle); g.appendChild(text); svg.appendChild(g);
         });
     }
@@ -194,48 +160,54 @@
     function showPanel(e, p, units) {
         const color = getVal(p, 'hexcolor') || '#fff';
         const name = (getVal(p, 'name') || 'Unknown').toUpperCase();
-        const type = (getVal(p, 'type') || 'Unknown Sector').toUpperCase();
         const status = (getVal(p, 'status') || 'Stable').toUpperCase();
-        const resources = getVal(p, 'resources') || '0';
-        const manpower = getVal(p, 'manpower') || '0';
-
-        // Check for contested status for the header badge
         const contestedBadge = status === 'CONTESTED' ? `<span class="contested-badge">! CONTESTED</span>` : '';
 
-        let unitsHtml = units.map(u => `
-            <div class="unit-item" style="border-left-color:${getVal(u, 'hexcolor') || '#00d2ff'}">
-                <div style="font-weight:bold; letter-spacing:1px;">${(getVal(u, 'name') || 'UNIT').toUpperCase()}</div>
-                <div style="font-size:0.85em; opacity:0.8; margin-top:3px;">
-                    ${getVal(u, 'type')} • <span style="color:var(--tactical-blue)">STR: ${getVal(u, 'strength')}</span>
+        // Parsing logic for Composition
+        let unitsHtml = units.map(u => {
+            const compRaw = getVal(u, 'composition') || "";
+            let compHtml = "";
+            
+            if (compRaw.trim()) {
+                const entries = compRaw.split('|').map(item => {
+                    const parts = item.split(':');
+                    return { name: parts[0]?.trim(), val: parts[1]?.trim() || "" };
+                });
+                
+                compHtml = `<div class="comp-list">` + 
+                    entries.map(ent => `
+                        <div class="comp-entry">
+                            <span class="comp-name">${ent.name}</span>
+                            <span class="comp-val">${ent.val}</span>
+                        </div>
+                    `).join('') + `</div>`;
+            }
+
+            return `
+                <div class="unit-item" style="border-left-color:${getVal(u, 'hexcolor') || '#00d2ff'}">
+                    <div style="font-weight:bold; letter-spacing:1px; display:flex; justify-content:space-between;">
+                        <span>${(getVal(u, 'name') || 'UNIT').toUpperCase()}</span>
+                        <span style="font-size:0.7em; opacity:0.6;">${getVal(u, 'type').toUpperCase()}</span>
+                    </div>
+                    ${compHtml}
                 </div>
-            </div>
-        `).join('') || '<div style="opacity:0.5; font-size:0.8em; font-style:italic;">No orbital assets detected.</div>';
+            `;
+        }).join('') || '<div style="opacity:0.5; font-size:0.8em; font-style:italic;">No orbital assets detected.</div>';
 
         panel.innerHTML = `
             <div class="panel-header">
-                <div style="font-size:1.4em; font-weight:bold; color:${color}; display:flex; align-items:center;">
+                <div style="font-size:1.4em; font-weight:bold; color:${color}; display:flex; align-items:center; justify-content:space-between;">
                     ${name} ${contestedBadge}
                 </div>
-                <div style="font-size:0.75em; opacity:0.6; margin-top:2px;">${type}</div>
+                <div style="font-size:0.75em; opacity:0.6; margin-top:2px;">${(getVal(p, 'type') || 'Sector').toUpperCase()}</div>
             </div>
 
-            <div class="stat-row">
-                <span class="stat-label">OWNER:</span>
-                <span style="font-weight:bold;">${(getVal(p, 'owner') || 'None').toUpperCase()}</span>
-            </div>
-            
-            <div class="stat-row">
-                <span class="stat-label">RESOURCES:</span>
-                <span style="color:var(--resource-gold); font-weight:bold;">${resources}</span>
-            </div>
-
-            <div class="stat-row">
-                <span class="stat-label">MANPOWER:</span>
-                <span style="color:var(--manpower-green); font-weight:bold;">${manpower}</span>
-            </div>
+            <div class="stat-row"><span style="opacity:0.7">OWNER:</span><b>${(getVal(p, 'owner') || 'None').toUpperCase()}</b></div>
+            <div class="stat-row"><span style="opacity:0.7">RESOURCES:</span><b style="color:var(--resource-gold)">${getVal(p, 'resources') || '0'}</b></div>
+            <div class="stat-row"><span style="opacity:0.7">MANPOWER:</span><b style="color:var(--manpower-green)">${getVal(p, 'manpower') || '0'}</b></div>
 
             <div style="margin-top:18px;">
-                <div style="font-size:0.65em; font-weight:bold; color:var(--tactical-blue); margin-bottom:8px; letter-spacing:2px;">
+                <div style="font-size:0.6em; font-weight:bold; color:var(--tactical-blue); margin-bottom:8px; letter-spacing:2px; border-bottom:1px solid rgba(0,210,255,0.2);">
                     ORBITAL ASSETS (${units.length})
                 </div>
                 ${unitsHtml}
