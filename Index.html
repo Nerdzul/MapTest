@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galactic Command v1.0</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-dark: #05070a;
+            --panel-bg: rgba(10, 20, 30, 0.9);
+            --border-glow: #00d2ff;
+        }
+
+        body { 
+            margin: 0; 
+            background: var(--bg-dark); 
+            color: #e0e0e0; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden; 
+        }
+
+        /* The SVG Map Background */
+        #map-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            background-image: 
+                radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0);
+            background-size: 40px 40px;
+        }
+
+        /* Planets */
+        .planet-node { cursor: pointer; transition: 0.3s; }
+        .planet-node:hover .planet-circle { r: 14; filter: brightness(1.5); }
+        .planet-label { pointer-events: none; font-size: 10px; letter-spacing: 1px; }
+
+        /* Contested Pulsing */
+        .contested { animation: pulse-warp 2s infinite ease-in-out; }
+        @keyframes pulse-warp {
+            0% { filter: drop-shadow(0 0 2px #ff0000); stroke: rgba(255,0,0,0.4); stroke-width: 2px; }
+            50% { filter: drop-shadow(0 0 12px #ff0000); stroke: rgba(255,0,0,1); stroke-width: 5px; }
+            100% { filter: drop-shadow(0 0 2px #ff0000); stroke: rgba(255,0,0,0.4); stroke-width: 2px; }
+        }
+
+        /* Hover Panel */
+        #info-panel {
+            position: absolute;
+            pointer-events: none;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-glow);
+            padding: 15px;
+            border-radius: 2px;
+            display: none;
+            min-width: 220px;
+            box-shadow: 0 0 20px rgba(0, 210, 255, 0.2);
+            backdrop-filter: blur(5px);
+            z-index: 999;
+        }
+
+        .panel-header { border-bottom: 1px solid #333; margin-bottom: 10px; padding-bottom: 5px; }
+        .stat-row { display: flex; justify-content: space-between; font-size: 0.85em; margin: 3px 0; }
+        .unit-section { margin-top: 12px; font-size: 0.8em; }
+        .unit-item { 
+            padding: 4px; 
+            background: rgba(255,255,255,0.05); 
+            margin-bottom: 2px; 
+            border-left: 2px solid #ccc; 
+        }
+
+        /* UI Overlays */
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-dark); display: flex; align-items: center;
+            justify-content: center; z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading-overlay">INITIALIZING SENSORS...</div>
+<div id="info-panel"></div>
+<svg id="map-container" viewBox="0 0 1000 1000"></svg>
+
+<script>
+    // --- CONFIGURATION ---
+    // 1. In your Google Sheet, go to File > Share > Publish to the Web.
+    // 2. Select the specific tab and choose "Comma-separated values (.csv)".
+    const PLANETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTtmIX95darstHqTgJ00Rp7LQhFNvJ0P-qVZ-ptGiKo3ZyYhHkw2ucJFvRDS8cpb9E0gH4m3-8CNCp9/pub?gid=0&single=true&output=csv';
+    const UNITS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTtmIX95darstHqTgJ00Rp7LQhFNvJ0P-qVZ-ptGiKo3ZyYhHkw2ucJFvRDS8cpb9E0gH4m3-8CNCp9/pub?gid=2047054726&single=true&output=csv';
+
+    let planetsData = [];
+    let unitsData = [];
+
+    // Helper to fetch and parse CSV
+    async function fetchCSV(url) {
+        const response = await fetch(url);
+        const csvText = await response.text();
+        return new Promise((resolve) => {
+            Papa.parse(csvText, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => resolve(results.data)
+            });
+        });
+    }
+
+	async function loadAllData() {
+    	try {
+        	console.log("Attempting to fetch data...");
+        	[planetsData, unitsData] = await Promise.all([
+            	fetchCSV(PLANETS_CSV_URL),
+            	fetchCSV(UNITS_CSV_URL)
+        	]);
+        
+        	console.log("Data received:", planetsData); // This shows you the data in the console
+        	document.getElementById('loading-overlay').style.display = 'none';
+        	renderMap();
+    	} catch (error) {
+        	console.error("Data Load Error:", error);
+        	alert("Failed to load Google Sheet. This is likely a CORS issue if running locally.");
+        	document.getElementById('loading-overlay').innerText = "CONNECTION FAILED";
+    		}
+	}
+
+    function renderMap() {
+        const svg = document.getElementById('map-container');
+        svg.innerHTML = ''; // Clear map
+
+        planetsData.forEach(p => {
+            const planetId = p.ID || p.id;
+            // Filter units orbiting this specific planet
+            const localUnits = unitsData.filter(u => (u.PlanetID || u.planetId) === planetId);
+            
+            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            g.setAttribute("class", "planet-node");
+
+            // The Planet Circle
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("cx", p.X);
+            circle.setAttribute("cy", p.Y);
+            circle.setAttribute("r", 10);
+            circle.setAttribute("fill", p.HexColor || '#ffffff');
+            circle.setAttribute("class", `planet-circle ${p.Status === 'Contested' ? 'contested' : ''}`);
+            
+            // The Label
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute("x", p.X);
+            text.setAttribute("y", parseInt(p.Y) + 28);
+            text.setAttribute("text-anchor", "middle");
+            text.setAttribute("fill", p.HexColor || '#fff');
+            text.setAttribute("class", "planet-label");
+            text.textContent = `${p.Name} [${localUnits.length}]`;
+
+            // Interactions
+            g.addEventListener('mouseenter', (e) => showPanel(e, p, localUnits));
+            g.addEventListener('mousemove', movePanel);
+            g.addEventListener('mouseleave', hidePanel);
+
+            g.appendChild(circle);
+            g.appendChild(text);
+            svg.appendChild(g);
+        });
+    }
+
+    const panel = document.getElementById('info-panel');
+
+    function showPanel(e, planet, units) {
+        let unitListHtml = units.map(u => `
+            <div class="unit-item" style="border-color: ${u.HexColor || '#999'}">
+                <strong>${u.Name}</strong> <br/>
+                <span style="font-size:0.9em">${u.Type} • STR: ${u.Strength}</span>
+            </div>
+        `).join('');
+
+        panel.innerHTML = `
+            <div class="panel-header">
+                <div style="font-size: 1.2em; font-weight: bold; color:${planet.HexColor}">${planet.Name.toUpperCase()}</div>
+                <div style="font-size: 0.7em; opacity: 0.7;">${planet.Type} SECTOR</div>
+            </div>
+            <div class="stat-row"><span>Owner:</span> <strong>${planet.Owner}</strong></div>
+            <div class="stat-row"><span>Status:</span> <span>${planet.Status}</span></div>
+            <div class="stat-row"><span>Population:</span> <span>${planet.Population || 'N/A'}</span></div>
+            
+            <div class="unit-section">
+                <div style="margin-bottom:5px; border-bottom: 1px solid #444;">ORBITAL PRESENCE (${units.length})</div>
+                ${unitListHtml || '<div style="opacity:0.5">No units detected.</div>'}
+            </div>
+        `;
+        panel.style.display = 'block';
+    }
+
+    function movePanel(e) {
+        // Offset to keep panel from being right under the cursor
+        panel.style.left = (e.pageX + 20) + 'px';
+        panel.style.top = (e.pageY + 20) + 'px';
+    }
+
+    function hidePanel() {
+        panel.style.display = 'none';
+    }
+
+    // Start the process
+    loadAllData();
+</script>
+</body>
+</html>
