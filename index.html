@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tactical Command Display v2.0</title>
+    <title>Tactical Command Display v2.1</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root {
@@ -21,7 +21,6 @@
             overflow: hidden; 
         }
 
-        /* The SVG Map Background */
         #map-container {
             width: 100vw;
             height: 100vh;
@@ -31,7 +30,6 @@
             background-size: 50px 50px;
         }
 
-        /* Planet & UI Styling */
         .planet-node { cursor: pointer; }
         .planet-circle { transition: 0.3s; stroke-width: 1px; stroke: rgba(255,255,255,0.2); }
         .planet-node:hover .planet-circle { r: 14; filter: brightness(1.3) drop-shadow(0 0 5px var(--tactical-blue)); }
@@ -44,7 +42,6 @@
             text-shadow: 0 0 5px rgba(0,0,0,0.8);
         }
 
-        /* Contested State - Pulse of War */
         .contested { animation: pulse-war 2s infinite ease-in-out; }
         @keyframes pulse-war {
             0% { filter: drop-shadow(0 0 2px var(--warhammer-red)); stroke: rgba(255,0,0,0.4); }
@@ -52,7 +49,6 @@
             100% { filter: drop-shadow(0 0 2px var(--warhammer-red)); stroke: rgba(255,0,0,0.4); }
         }
 
-        /* Hover Info Panel */
         #info-panel {
             position: absolute;
             pointer-events: none;
@@ -90,7 +86,6 @@
 <svg id="map-container" viewBox="0 0 1000 1000"></svg>
 
 <script>
-    // --- CONFIGURATION ---
     const PLANETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTtmIX95darstHqTgJ00Rp7LQhFNvJ0P-qVZ-ptGiKo3ZyYhHkw2ucJFvRDS8cpb9E0gH4m3-8CNCp9/pub?gid=0&single=true&output=csv';
     const UNITS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTtmIX95darstHqTgJ00Rp7LQhFNvJ0P-qVZ-ptGiKo3ZyYhHkw2ucJFvRDS8cpb9E0gH4m3-8CNCp9/pub?gid=2047054726&single=true&output=csv';
     const FLEET_ICON_URL = 'https://raw.githubusercontent.com/Nerdzul/MapTest/refs/heads/main/fleet_Icon_-svg.svg';
@@ -98,7 +93,6 @@
     let planetsData = [];
     let unitsData = [];
 
-    // Utility: Find data in row regardless of case
     const getVal = (obj, key) => {
         const found = Object.keys(obj).find(k => k.toLowerCase().trim() === key.toLowerCase());
         return found ? obj[found] : null;
@@ -106,7 +100,7 @@
 
     async function fetchCSV(url) {
         const response = await fetch(url);
-        if (!response.ok) throw new Error("Google access denied. Check Share settings.");
+        if (!response.ok) throw new Error("Google access denied.");
         const csvText = await response.text();
         return new Promise((resolve) => {
             Papa.parse(csvText, { header: true, skipEmptyLines: true, complete: (res) => resolve(res.data) });
@@ -138,29 +132,31 @@
             if (isNaN(x) || isNaN(y)) return;
 
             const localUnits = unitsData.filter(u => getVal(u, 'planetid') === id);
-            const hasFleets = localUnits.some(u => getVal(u, 'type').toLowerCase().includes('fleet'));
+            const hasFleets = localUnits.some(u => {
+                const type = getVal(u, 'type');
+                return type && type.toLowerCase().includes('fleet');
+            });
 
             const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
             g.setAttribute("class", "planet-node");
 
-            // 1. PLANET ORB
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("cx", x); circle.setAttribute("cy", y); circle.setAttribute("r", 10);
             circle.setAttribute("fill", color);
             circle.setAttribute("class", `planet-circle ${status === 'Contested' ? 'contested' : ''}`);
             
-            // 2. TACTICAL LABEL
             const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
             text.setAttribute("x", x); text.setAttribute("y", y + 35);
             text.setAttribute("text-anchor", "middle"); text.setAttribute("fill", color);
             text.setAttribute("class", "planet-label");
             text.textContent = name.toUpperCase();
 
-            // 3. UNIT COUNTER BADGE (To the Right)
+            // FIXED LINE 144: Added quotes around the color value
             if (localUnits.length > 0) {
                 const bG = document.createElementNS("http://www.w3.org/2000/svg", "circle");
                 bG.setAttribute("cx", x + 18); bG.setAttribute("cy", y - 10); bG.setAttribute("r", 8);
-                bG.setAttribute("fill", "rgba(0,0,0,0.8)"); bG.setAttribute("stroke", var(--tactical-blue));
+                bG.setAttribute("fill", "rgba(0,0,0,0.8)"); 
+                bG.setAttribute("stroke", "#00d2ff"); 
                 g.appendChild(bG);
 
                 const bT = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -171,7 +167,6 @@
                 g.appendChild(bT);
             }
 
-            // 4. FLEET ICON (To the Left)
             if (hasFleets) {
                 const icon = document.createElementNS("http://www.w3.org/2000/svg", "image");
                 icon.setAttributeNS('http://www.w3.org/1999/xlink', 'href', FLEET_ICON_URL);
@@ -194,22 +189,22 @@
         const color = getVal(p, 'hexcolor') || '#fff';
         let unitsHtml = units.map(u => `
             <div class="unit-item" style="border-color:${getVal(u, 'hexcolor') || '#666'}">
-                <strong>${getVal(u, 'name').toUpperCase()}</strong><br>
-                <span style="font-size:0.8em; opacity:0.8;">${getVal(u, 'type')} • STRENGTH: ${getVal(u, 'strength')}</span>
+                <strong>${(getVal(u, 'name') || 'Unnamed Unit').toUpperCase()}</strong><br>
+                <span style="font-size:0.8em; opacity:0.8;">${getVal(u, 'type') || 'Unknown'} • STRENGTH: ${getVal(u, 'strength') || '0'}</span>
             </div>
         `).join('') || '<div style="opacity:0.5">No military presence.</div>';
 
         panel.innerHTML = `
             <div class="panel-header">
-                <div style="font-size:1.3em; font-weight:bold; color:${color}">${getVal(p, 'name').toUpperCase()}</div>
+                <div style="font-size:1.3em; font-weight:bold; color:${color}">${(getVal(p, 'name') || 'Unknown').toUpperCase()}</div>
                 <div style="font-size:0.75em; opacity:0.6; letter-spacing:1px;">COORDINATES: ${getVal(p, 'x')}, ${getVal(p, 'y')}</div>
             </div>
             <div style="margin: 8px 0; font-size:0.9em;">
-                <div><strong>OWNER:</strong> ${getVal(p, 'owner').toUpperCase()}</div>
-                <div><strong>STATUS:</strong> ${getVal(p, 'status').toUpperCase()}</div>
+                <div><strong>OWNER:</strong> ${(getVal(p, 'owner') || 'None').toUpperCase()}</div>
+                <div><strong>STATUS:</strong> ${(getVal(p, 'status') || 'Idle').toUpperCase()}</div>
             </div>
             <div style="margin-top:15px;">
-                <div style="font-size:0.7em; font-weight:bold; color:var(--tactical-blue); margin-bottom:5px;">TACTICAL READOUT:</div>
+                <div style="font-size:0.7em; font-weight:bold; color:#00d2ff; margin-bottom:5px;">TACTICAL READOUT:</div>
                 ${unitsHtml}
             </div>
         `;
