@@ -3,221 +3,228 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tactical Command Display v2.4</title>
+    <title>Tactical Command Console v2.5</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root {
-            --bg-dark: #05070a;
-            --panel-bg: rgba(5, 10, 15, 0.98);
+            --bg-dark: #020406;
+            --panel-bg: rgba(5, 12, 18, 0.95);
             --tactical-blue: #00d2ff;
-            --warhammer-red: #ff0000;
+            --warhammer-red: #ff1100;
             --resource-gold: #f1c40f;
             --manpower-green: #2ecc71;
-            --text-dim: #a0a0a0;
+            --border-style: 1px solid rgba(0, 210, 255, 0.3);
         }
-        body { margin: 0; background: var(--bg-dark); color: #e0e0e0; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
-        
-        #map-container { width: 100vw; height: 100vh; display: block; background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.03) 1px, transparent 0); background-size: 50px 50px; }
 
-        /* Planet Styling */
+        body { 
+            margin: 0; background: var(--bg-dark); color: #e0e0e0; 
+            font-family: 'Courier New', Courier, monospace; 
+            display: flex; height: 100vh; overflow: hidden; 
+        }
+
+        /* --- LAYOUT --- */
+        #map-container { 
+            flex-grow: 1; height: 100vh; position: relative; cursor: crosshair;
+            background-image: 
+                linear-gradient(rgba(0, 210, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 210, 255, 0.05) 1px, transparent 1px);
+            background-size: 100px 100px;
+        }
+
+        #sidebar {
+            width: 380px; height: 100vh; background: var(--panel-bg);
+            border-left: 2px solid var(--tactical-blue); padding: 20px;
+            box-sizing: border-box; overflow-y: auto; z-index: 100;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+        }
+
+        /* --- PLANETS --- */
         .planet-node { cursor: pointer; }
-        .planet-circle { transition: 0.3s; stroke-width: 1px; stroke: rgba(255,255,255,0.2); }
-        .planet-node:hover .planet-circle { r: 14; filter: brightness(1.3) drop-shadow(0 0 8px var(--tactical-blue)); }
-        .planet-label { pointer-events: none; font-size: 11px; font-weight: bold; letter-spacing: 1.5px; }
-
-        .contested-pulse { animation: pulse-war 2s infinite ease-in-out; }
-        @keyframes pulse-war {
-            0% { filter: drop-shadow(0 0 2px var(--warhammer-red)); }
-            50% { filter: drop-shadow(0 0 15px var(--warhammer-red)); stroke-width: 3px; }
-            100% { filter: drop-shadow(0 0 2px var(--warhammer-red)); }
-        }
-
-        /* Infobox */
-        #info-panel { 
-            position: absolute; pointer-events: none; background: var(--panel-bg); 
-            border: 1px solid var(--tactical-blue); padding: 18px; border-radius: 2px; 
-            display: none; min-width: 300px; z-index: 999;
-            box-shadow: 0 0 40px rgba(0,0,0,0.9); backdrop-filter: blur(12px);
-        }
-
-        .panel-header { border-bottom: 2px solid var(--tactical-blue); margin-bottom: 12px; padding-bottom: 8px; }
+        .planet-circle { transition: 0.4s; stroke: rgba(255,255,255,0.2); }
+        .planet-node:hover .planet-circle { r: 15; filter: drop-shadow(0 0 10px var(--tactical-blue)); }
         
-        .contested-badge {
-            color: var(--warhammer-red); font-size: 0.7em; font-weight: bold;
-            border: 1px solid var(--warhammer-red); padding: 2px 6px;
-            margin-left: 10px; background: rgba(255, 0, 0, 0.1);
+        /* AGGRESSIVE CONTESTED PULSE */
+        .contested-pulse { animation: alert-red 1.2s infinite; stroke-width: 4px !important; }
+        @keyframes alert-red {
+            0% { filter: drop-shadow(0 0 2px var(--warhammer-red)); r: 10; opacity: 1; }
+            50% { filter: drop-shadow(0 0 25px var(--warhammer-red)); r: 14; opacity: 0.8; stroke: var(--warhammer-red); }
+            100% { filter: drop-shadow(0 0 2px var(--warhammer-red)); r: 10; opacity: 1; }
         }
 
-        .stat-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.85em; }
+        /* --- TOOLTIP (Quick Look) --- */
+        #quick-look {
+            position: absolute; pointer-events: none; display: none;
+            background: rgba(0,0,0,0.8); border: 1px solid var(--tactical-blue);
+            padding: 5px 10px; font-size: 12px; color: var(--tactical-blue);
+            white-space: nowrap; z-index: 1000; text-transform: uppercase;
+        }
+
+        /* --- SIDEBAR COMPONENTS --- */
+        .sidebar-header { border-bottom: 3px double var(--tactical-blue); margin-bottom: 20px; padding-bottom: 10px; }
+        .sidebar-header h2 { margin: 0; letter-spacing: 2px; }
         
-        /* Army/Fleet Boxes */
-        .unit-item { 
-            padding: 10px; background: rgba(255,255,255,0.03); 
-            margin-bottom: 8px; border: 1px solid rgba(0, 210, 255, 0.2);
-            border-left: 4px solid var(--tactical-blue); 
+        .contested-banner {
+            background: var(--warhammer-red); color: white; text-align: center;
+            font-weight: bold; padding: 5px; margin: 10px 0; font-size: 0.8em;
+            animation: blink 0.8s infinite alternate;
+        }
+        @keyframes blink { from { opacity: 0.4; } to { opacity: 1; } }
+
+        .unit-card { 
+            background: rgba(0, 210, 255, 0.05); border: var(--border-style);
+            margin-bottom: 15px; padding: 12px; border-left: 5px solid var(--tactical-blue);
+        }
+        .comp-row { display: flex; justify-content: space-between; font-size: 0.8em; color: #aaa; margin-top: 3px; }
+
+        /* Mobile Adjustments */
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            #sidebar { width: 100%; height: 40vh; border-left: none; border-top: 2px solid var(--tactical-blue); }
+            #map-container { height: 60vh; }
         }
 
-        /* Composition Sub-list */
-        .comp-list { margin-top: 8px; padding-left: 0; list-style: none; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 5px; }
-        .comp-entry { display: flex; justify-content: space-between; font-size: 0.8em; color: var(--text-dim); margin-bottom: 2px; }
-        .comp-name { text-transform: uppercase; letter-spacing: 0.5px; }
-        .comp-val { color: var(--tactical-blue); font-weight: bold; }
-
-        #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; font-weight: bold; }
+        #loading { position: fixed; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; z-index: 9999; }
     </style>
 </head>
 <body>
 
-<div id="loading-overlay">ESTABLISHING VOID-LINK...</div>
-<div id="info-panel"></div>
-<svg id="map-container" viewBox="0 0 1000 1000"></svg>
+<div id="loading">SCANNING SECTOR...</div>
+
+<div id="map-container">
+    <div id="quick-look"></div>
+    <svg id="svg-map" viewBox="0 0 1000 1000" style="width:100%; height:100%"></svg>
+</div>
+
+<aside id="sidebar">
+    <div id="sidebar-content">
+        <div class="sidebar-header">
+            <h3 style="opacity: 0.5;">NO PLANET SELECTED</h3>
+            <p>Select a planetary node for tactical readout.</p>
+        </div>
+    </div>
+</aside>
 
 <script>
     const PLANETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTtmIX95darstHqTgJ00Rp7LQhFNvJ0P-qVZ-ptGiKo3ZyYhHkw2ucJFvRDS8cpb9E0gH4m3-8CNCp9/pub?gid=0&single=true&output=csv';
     const UNITS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTtmIX95darstHqTgJ00Rp7LQhFNvJ0P-qVZ-ptGiKo3ZyYhHkw2ucJFvRDS8cpb9E0gH4m3-8CNCp9/pub?gid=2047054726&single=true&output=csv';
     const FLEET_ICON_URL = 'https://raw.githubusercontent.com/Nerdzul/MapTest/refs/heads/main/fleet_Icon_-svg.svg';
 
+    let planetsData = [], unitsData = [];
     const getVal = (obj, key) => {
-        if (!obj) return null;
         const found = Object.keys(obj).find(k => k.toLowerCase().trim() === key.toLowerCase());
         return found ? obj[found] : null;
     };
 
-    async function fetchCSV(url) {
-        const response = await fetch(url);
-        const csvText = await response.text();
-        return new Promise((resolve) => {
-            Papa.parse(csvText, { header: true, skipEmptyLines: true, complete: (res) => resolve(res.data) });
-        });
-    }
-
     async function init() {
-        try {
-            [planetsData, unitsData] = await Promise.all([fetchCSV(PLANETS_CSV_URL), fetchCSV(UNITS_CSV_URL)]);
-            renderMap();
-            document.getElementById('loading-overlay').style.display = 'none';
-        } catch (e) { console.error(e); }
+        const [p, u] = await Promise.all([
+            fetch(PLANETS_CSV_URL).then(r => r.text()),
+            fetch(UNITS_CSV_URL).then(r => r.text())
+        ]);
+        planetsData = Papa.parse(p, {header:true}).data;
+        unitsData = Papa.parse(u, {header:true}).data;
+        document.getElementById('loading').style.display = 'none';
+        renderMap();
     }
 
     function renderMap() {
-        const svg = document.getElementById('map-container');
-        svg.innerHTML = ''; 
-        planetsData.forEach((p) => {
-            const id = getVal(p, 'id');
-            const x = parseFloat(getVal(p, 'x'));
-            const y = parseFloat(getVal(p, 'y'));
-            const color = getVal(p, 'hexcolor') || '#ffffff';
-            const status = getVal(p, 'status');
+        const svg = document.getElementById('svg-map');
+        planetsData.forEach(p => {
+            const id = getVal(p, 'id'), x = parseFloat(getVal(p, 'x')), y = parseFloat(getVal(p, 'y'));
             if (isNaN(x) || isNaN(y)) return;
 
-            const localUnits = unitsData.filter(u => getVal(u, 'planetid') === id);
-            const hasFleets = localUnits.some(u => (getVal(u, 'type') || "").toLowerCase().includes('fleet'));
+            const units = unitsData.filter(u => getVal(u, 'planetid') === id);
+            const status = (getVal(p, 'status') || "").toLowerCase();
+            const color = getVal(p, 'hexcolor') || "#fff";
 
             const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
             g.setAttribute("class", "planet-node");
 
-            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("cx", x); circle.setAttribute("cy", y); circle.setAttribute("r", 10);
-            circle.setAttribute("fill", color);
-            circle.setAttribute("class", `planet-circle ${status && status.toLowerCase() === 'contested' ? 'contested-pulse' : ''}`);
+            // Planet Circle
+            const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 10);
+            c.setAttribute("fill", color);
+            c.setAttribute("class", `planet-circle ${status === 'contested' ? 'contested-pulse' : ''}`);
             
-            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            text.setAttribute("x", x); text.setAttribute("y", y + 35);
-            text.setAttribute("text-anchor", "middle"); text.setAttribute("fill", color);
-            text.setAttribute("class", "planet-label");
-            text.textContent = (getVal(p, 'name') || 'Unknown').toUpperCase();
-
-            if (localUnits.length > 0) {
+            // Unit Counter (Keep it on map)
+            if (units.length > 0) {
                 const bG = document.createElementNS("http://www.w3.org/2000/svg", "circle");
                 bG.setAttribute("cx", x + 18); bG.setAttribute("cy", y - 10); bG.setAttribute("r", 8);
-                bG.setAttribute("fill", "rgba(0,0,0,0.8)"); bG.setAttribute("stroke", "#00d2ff"); 
+                bG.setAttribute("fill", "rgba(0,0,0,0.8)"); bG.setAttribute("stroke", "#00d2ff");
                 g.appendChild(bG);
-
                 const bT = document.createElementNS("http://www.w3.org/2000/svg", "text");
                 bT.setAttribute("x", x + 18); bT.setAttribute("y", y - 7);
                 bT.setAttribute("text-anchor", "middle"); bT.setAttribute("fill", "#fff");
-                bT.style.fontSize = "9px"; bT.style.fontWeight = "bold";
-                bT.textContent = localUnits.length;
+                bT.style.fontSize = "9px"; bT.textContent = units.length;
                 g.appendChild(bT);
             }
 
-            if (hasFleets) {
-                const icon = document.createElementNS("http://www.w3.org/2000/svg", "image");
-                icon.setAttributeNS('http://www.w3.org/1999/xlink', 'href', FLEET_ICON_URL);
-                icon.setAttribute("x", x - 32); icon.setAttribute("y", y - 18);
-                icon.setAttribute("height", "20"); icon.setAttribute("width", "20");
-                g.appendChild(icon);
+            // Fleet Icon
+            if (units.some(u => (getVal(u, 'type')||"").toLowerCase().includes('fleet'))) {
+                const img = document.createElementNS("http://www.w3.org/2000/svg", "image");
+                img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', FLEET_ICON_URL);
+                img.setAttribute("x", x - 32); img.setAttribute("y", y - 18);
+                img.setAttribute("height", "20"); img.setAttribute("width", "20");
+                g.appendChild(img);
             }
 
-            g.addEventListener('mouseenter', (e) => showPanel(e, p, localUnits));
-            g.addEventListener('mousemove', movePanel);
-            g.addEventListener('mouseleave', hidePanel);
-            g.appendChild(circle); g.appendChild(text); svg.appendChild(g);
+            const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            label.setAttribute("x", x); label.setAttribute("y", y + 30);
+            label.setAttribute("text-anchor", "middle"); label.setAttribute("fill", color);
+            label.style.fontSize = "10px"; label.style.fontWeight = "bold";
+            label.textContent = getVal(p, 'name').toUpperCase();
+
+            g.addEventListener('mouseenter', (e) => showQuickLook(e, p));
+            g.addEventListener('mousemove', moveQuickLook);
+            g.addEventListener('mouseleave', hideQuickLook);
+            g.addEventListener('click', () => updateSidebar(p, units));
+
+            g.appendChild(c); g.appendChild(label); svg.appendChild(g);
         });
     }
 
-    const panel = document.getElementById('info-panel');
-    function showPanel(e, p, units) {
-        const color = getVal(p, 'hexcolor') || '#fff';
-        const name = (getVal(p, 'name') || 'Unknown').toUpperCase();
-        const status = (getVal(p, 'status') || 'Stable').toUpperCase();
-        const contestedBadge = status === 'CONTESTED' ? `<span class="contested-badge">! CONTESTED</span>` : '';
-
-        // Parsing logic for Composition
-        let unitsHtml = units.map(u => {
-            const compRaw = getVal(u, 'composition') || "";
-            let compHtml = "";
-            
-            if (compRaw.trim()) {
-                const entries = compRaw.split('|').map(item => {
-                    const parts = item.split(':');
-                    return { name: parts[0]?.trim(), val: parts[1]?.trim() || "" };
-                });
-                
-                compHtml = `<div class="comp-list">` + 
-                    entries.map(ent => `
-                        <div class="comp-entry">
-                            <span class="comp-name">${ent.name}</span>
-                            <span class="comp-val">${ent.val}</span>
-                        </div>
-                    `).join('') + `</div>`;
-            }
-
-            return `
-                <div class="unit-item" style="border-left-color:${getVal(u, 'hexcolor') || '#00d2ff'}">
-                    <div style="font-weight:bold; letter-spacing:1px; display:flex; justify-content:space-between;">
-                        <span>${(getVal(u, 'name') || 'UNIT').toUpperCase()}</span>
-                        <span style="font-size:0.7em; opacity:0.6;">${getVal(u, 'type').toUpperCase()}</span>
-                    </div>
-                    ${compHtml}
-                </div>
-            `;
-        }).join('') || '<div style="opacity:0.5; font-size:0.8em; font-style:italic;">No orbital assets detected.</div>';
-
-        panel.innerHTML = `
-            <div class="panel-header">
-                <div style="font-size:1.4em; font-weight:bold; color:${color}; display:flex; align-items:center; justify-content:space-between;">
-                    ${name} ${contestedBadge}
-                </div>
-                <div style="font-size:0.75em; opacity:0.6; margin-top:2px;">${(getVal(p, 'type') || 'Sector').toUpperCase()}</div>
-            </div>
-
-            <div class="stat-row"><span style="opacity:0.7">OWNER:</span><b>${(getVal(p, 'owner') || 'None').toUpperCase()}</b></div>
-            <div class="stat-row"><span style="opacity:0.7">RESOURCES:</span><b style="color:var(--resource-gold)">${getVal(p, 'resources') || '0'}</b></div>
-            <div class="stat-row"><span style="opacity:0.7">MANPOWER:</span><b style="color:var(--manpower-green)">${getVal(p, 'manpower') || '0'}</b></div>
-
-            <div style="margin-top:18px;">
-                <div style="font-size:0.6em; font-weight:bold; color:var(--tactical-blue); margin-bottom:8px; letter-spacing:2px; border-bottom:1px solid rgba(0,210,255,0.2);">
-                    ORBITAL ASSETS (${units.length})
-                </div>
-                ${unitsHtml}
-            </div>
-        `;
-        panel.style.display = 'block';
+    const ql = document.getElementById('quick-look');
+    function showQuickLook(e, p) {
+        ql.innerHTML = `${getVal(p, 'name')} (${getVal(p, 'owner')})`;
+        ql.style.display = 'block';
     }
+    function moveQuickLook(e) { ql.style.left = (e.pageX + 10) + 'px'; ql.style.top = (e.pageY + 10) + 'px'; }
+    function hideQuickLook() { ql.style.display = 'none'; }
 
-    function movePanel(e) { panel.style.left = (e.pageX + 20) + 'px'; panel.style.top = (e.pageY + 20) + 'px'; }
-    function hidePanel() { panel.style.display = 'none'; }
+    function updateSidebar(p, units) {
+        const color = getVal(p, 'hexcolor') || '#fff';
+        const isContested = (getVal(p, 'status') || "").toLowerCase() === 'contested';
+        
+        let unitHtml = units.map(u => {
+            const comp = (getVal(u, 'composition') || "").split('|').map(item => {
+                const pts = item.split(':');
+                return `<div class="comp-row"><span>${pts[0]}</span><span>${pts[1]||''}</span></div>`;
+            }).join('');
+            return `
+                <div class="unit-card" style="border-left-color:${getVal(u, 'hexcolor')||'#00d2ff'}">
+                    <div style="font-weight:bold; display:flex; justify-content:space-between;">
+                        <span>${getVal(u, 'name').toUpperCase()}</span>
+                        <span style="font-size:0.7em; color:var(--tactical-blue)">${getVal(u, 'type').toUpperCase()}</span>
+                    </div>
+                    <div style="font-size:0.8em; margin: 5px 0;">STRENGTH: ${getVal(u, 'strength')}</div>
+                    <div style="border-top:1px solid rgba(255,255,255,0.1); padding-top:5px;">${comp}</div>
+                </div>`;
+        }).join('');
+
+        document.getElementById('sidebar-content').innerHTML = `
+            <div class="sidebar-header">
+                <h2 style="color:${color}">${getVal(p, 'name').toUpperCase()}</h2>
+                <div style="font-size:0.8em; opacity:0.6;">${getVal(p, 'type').toUpperCase()} SECTOR</div>
+            </div>
+            ${isContested ? '<div class="contested-banner">⚠ CONTESTED ZONE - PRIORITY ALPHA ⚠</div>' : ''}
+            <div style="margin-bottom:20px;">
+                <div class="stat-row"><span>OWNER:</span><b>${getVal(p, 'owner').toUpperCase()}</b></div>
+                <div class="stat-row"><span>RESOURCES:</span><b style="color:var(--resource-gold)">${getVal(p, 'resources')}</b></div>
+                <div class="stat-row"><span>MANPOWER:</span><b style="color:var(--manpower-green)">${getVal(p, 'manpower')}</b></div>
+            </div>
+            <div style="font-size:0.7em; color:var(--tactical-blue); margin-bottom:10px; border-bottom:1px solid var(--tactical-blue)">TACTICAL ASSET LIST</div>
+            ${unitHtml || '<p style="opacity:0.5; font-style:italic;">No orbital signatures detected.</p>'}
+        `;
+    }
 
     init();
 </script>
