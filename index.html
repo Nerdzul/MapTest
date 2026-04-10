@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tactical Command Display v2.1</title>
+    <title>Tactical Command Display v2.2</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root {
@@ -12,95 +12,61 @@
             --tactical-blue: #00d2ff;
             --warhammer-red: #ff0000;
         }
-
-        body { 
-            margin: 0; 
-            background: var(--bg-dark); 
-            color: #e0e0e0; 
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden; 
-        }
-
-        #map-container {
-            width: 100vw;
-            height: 100vh;
-            display: block;
-            background-image: 
-                radial-gradient(circle at 2px 2px, rgba(255,255,255,0.03) 1px, transparent 0);
-            background-size: 50px 50px;
-        }
-
+        body { margin: 0; background: var(--bg-dark); color: #e0e0e0; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        #map-container { width: 100vw; height: 100vh; display: block; background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.03) 1px, transparent 0); background-size: 50px 50px; }
         .planet-node { cursor: pointer; }
         .planet-circle { transition: 0.3s; stroke-width: 1px; stroke: rgba(255,255,255,0.2); }
         .planet-node:hover .planet-circle { r: 14; filter: brightness(1.3) drop-shadow(0 0 5px var(--tactical-blue)); }
-        
-        .planet-label { 
-            pointer-events: none; 
-            font-size: 11px; 
-            font-weight: bold; 
-            letter-spacing: 1.5px; 
-            text-shadow: 0 0 5px rgba(0,0,0,0.8);
-        }
-
+        .planet-label { pointer-events: none; font-size: 11px; font-weight: bold; letter-spacing: 1.5px; }
         .contested { animation: pulse-war 2s infinite ease-in-out; }
         @keyframes pulse-war {
-            0% { filter: drop-shadow(0 0 2px var(--warhammer-red)); stroke: rgba(255,0,0,0.4); }
-            50% { filter: drop-shadow(0 0 15px var(--warhammer-red)); stroke: rgba(255,0,0,1); stroke-width: 3px; }
-            100% { filter: drop-shadow(0 0 2px var(--warhammer-red)); stroke: rgba(255,0,0,0.4); }
+            0% { filter: drop-shadow(0 0 2px var(--warhammer-red)); }
+            50% { filter: drop-shadow(0 0 15px var(--warhammer-red)); stroke-width: 3px; }
+            100% { filter: drop-shadow(0 0 2px var(--warhammer-red)); }
         }
-
-        #info-panel {
-            position: absolute;
-            pointer-events: none;
-            background: var(--panel-bg);
-            border: 1px solid var(--tactical-blue);
-            padding: 15px;
-            border-radius: 2px;
-            display: none;
-            min-width: 250px;
-            box-shadow: 0 0 30px rgba(0, 210, 255, 0.15);
-            backdrop-filter: blur(10px);
-            z-index: 999;
-        }
-
-        .panel-header { border-bottom: 2px solid var(--tactical-blue); margin-bottom: 12px; padding-bottom: 5px; }
-        .unit-item { 
-            padding: 6px; 
-            background: rgba(255,255,255,0.03); 
-            margin-bottom: 4px; 
-            border-left: 3px solid #666; 
-            font-size: 0.85em;
-        }
-
-        #loading-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: var(--bg-dark); display: flex; align-items: center;
-            justify-content: center; z-index: 1000; letter-spacing: 3px; font-weight: bold;
-        }
+        #info-panel { position: absolute; pointer-events: none; background: var(--panel-bg); border: 1px solid var(--tactical-blue); padding: 15px; border-radius: 2px; display: none; min-width: 250px; z-index: 999; }
+        #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; font-weight: bold; }
+        #debug-log { font-family: monospace; font-size: 12px; color: #666; margin-top: 20px; max-width: 80%; text-align: center; }
     </style>
 </head>
 <body>
 
-<div id="loading-overlay">ESTABLISHING VOID-LINK...</div>
+<div id="loading-overlay">
+    <div>ESTABLISHING VOID-LINK...</div>
+    <div id="debug-log">Initialing systems...</div>
+</div>
+
 <div id="info-panel"></div>
 <svg id="map-container" viewBox="0 0 1000 1000"></svg>
 
 <script>
+    // --- CONFIG ---
     const PLANETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTtmIX95darstHqTgJ00Rp7LQhFNvJ0P-qVZ-ptGiKo3ZyYhHkw2ucJFvRDS8cpb9E0gH4m3-8CNCp9/pub?gid=0&single=true&output=csv';
     const UNITS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTtmIX95darstHqTgJ00Rp7LQhFNvJ0P-qVZ-ptGiKo3ZyYhHkw2ucJFvRDS8cpb9E0gH4m3-8CNCp9/pub?gid=2047054726&single=true&output=csv';
     const FLEET_ICON_URL = 'https://raw.githubusercontent.com/Nerdzul/MapTest/refs/heads/main/fleet_Icon_-svg.svg';
+
+    const debugEl = document.getElementById('debug-log');
+    function log(msg, isError = false) {
+        console.log(msg);
+        const span = document.createElement('div');
+        if(isError) span.style.color = 'red';
+        span.innerText = `> ${msg}`;
+        debugEl.appendChild(span);
+    }
 
     let planetsData = [];
     let unitsData = [];
 
     const getVal = (obj, key) => {
+        if (!obj) return null;
         const found = Object.keys(obj).find(k => k.toLowerCase().trim() === key.toLowerCase());
         return found ? obj[found] : null;
     };
 
-    async function fetchCSV(url) {
+    async function fetchCSV(url, name) {
+        log(`Fetching ${name}...`);
         const response = await fetch(url);
-        if (!response.ok) throw new Error("Google access denied.");
+        if (!response.ok) throw new Error(`${name} fetch failed: ${response.status}`);
         const csvText = await response.text();
         return new Promise((resolve) => {
             Papa.parse(csvText, { header: true, skipEmptyLines: true, complete: (res) => resolve(res.data) });
@@ -109,108 +75,113 @@
 
     async function init() {
         try {
-            [planetsData, unitsData] = await Promise.all([fetchCSV(PLANETS_CSV_URL), fetchCSV(UNITS_CSV_URL)]);
-            document.getElementById('loading-overlay').style.display = 'none';
+            [planetsData, unitsData] = await Promise.all([
+                fetchCSV(PLANETS_CSV_URL, "Planets"),
+                fetchCSV(UNITS_CSV_URL, "Units")
+            ]);
+            log(`Success: ${planetsData.length} planets, ${unitsData.length} units.`);
             renderMap();
+            document.getElementById('loading-overlay').style.display = 'none';
         } catch (e) {
-            document.getElementById('loading-overlay').innerHTML = `<div style="color:red">VOID-LINK FAILURE: ${e.message}</div>`;
+            log(`CRITICAL ERROR: ${e.message}`, true);
         }
     }
 
     function renderMap() {
+        log("Rendering Map...");
         const svg = document.getElementById('map-container');
         svg.innerHTML = ''; 
 
         planetsData.forEach((p, index) => {
-            const id = getVal(p, 'id');
-            const name = getVal(p, 'name') || 'Unknown Sector';
-            const x = parseFloat(getVal(p, 'x'));
-            const y = parseFloat(getVal(p, 'y'));
-            const color = getVal(p, 'hexcolor') || '#ffffff';
-            const status = getVal(p, 'status');
+            try {
+                const id = getVal(p, 'id');
+                const x = parseFloat(getVal(p, 'x'));
+                const y = parseFloat(getVal(p, 'y'));
+                const color = getVal(p, 'hexcolor') || '#ffffff';
+                const status = getVal(p, 'status');
 
-            if (isNaN(x) || isNaN(y)) return;
+                if (isNaN(x) || isNaN(y)) return;
 
-            const localUnits = unitsData.filter(u => getVal(u, 'planetid') === id);
-            const hasFleets = localUnits.some(u => {
-                const type = getVal(u, 'type');
-                return type && type.toLowerCase().includes('fleet');
-            });
+                const localUnits = unitsData.filter(u => getVal(u, 'planetid') === id);
+                const hasFleets = localUnits.some(u => {
+                    const type = getVal(u, 'type');
+                    return type && type.toLowerCase().includes('fleet');
+                });
 
-            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-            g.setAttribute("class", "planet-node");
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                g.setAttribute("class", "planet-node");
 
-            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("cx", x); circle.setAttribute("cy", y); circle.setAttribute("r", 10);
-            circle.setAttribute("fill", color);
-            circle.setAttribute("class", `planet-circle ${status === 'Contested' ? 'contested' : ''}`);
-            
-            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            text.setAttribute("x", x); text.setAttribute("y", y + 35);
-            text.setAttribute("text-anchor", "middle"); text.setAttribute("fill", color);
-            text.setAttribute("class", "planet-label");
-            text.textContent = name.toUpperCase();
+                // Planet
+                const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                circle.setAttribute("cx", x); circle.setAttribute("cy", y); circle.setAttribute("r", 10);
+                circle.setAttribute("fill", color);
+                circle.setAttribute("class", `planet-circle ${status === 'Contested' ? 'contested' : ''}`);
+                
+                // Label
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute("x", x); text.setAttribute("y", y + 35);
+                text.setAttribute("text-anchor", "middle"); text.setAttribute("fill", color);
+                text.setAttribute("class", "planet-label");
+                text.textContent = (getVal(p, 'name') || 'Unknown').toUpperCase();
 
-            // FIXED LINE 144: Added quotes around the color value
-            if (localUnits.length > 0) {
-                const bG = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-                bG.setAttribute("cx", x + 18); bG.setAttribute("cy", y - 10); bG.setAttribute("r", 8);
-                bG.setAttribute("fill", "rgba(0,0,0,0.8)"); 
-                bG.setAttribute("stroke", "#00d2ff"); 
-                g.appendChild(bG);
+                // Tactical Badge (Fixed color string)
+                if (localUnits.length > 0) {
+                    const bG = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    bG.setAttribute("cx", x + 18); bG.setAttribute("cy", y - 10); bG.setAttribute("r", 8);
+                    bG.setAttribute("fill", "rgba(0,0,0,0.8)"); 
+                    bG.setAttribute("stroke", "#00d2ff"); 
+                    g.appendChild(bG);
 
-                const bT = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                bT.setAttribute("x", x + 18); bT.setAttribute("y", y - 7);
-                bT.setAttribute("text-anchor", "middle"); bT.setAttribute("fill", "#fff");
-                bT.style.fontSize = "9px"; bT.style.fontWeight = "bold";
-                bT.textContent = localUnits.length;
-                g.appendChild(bT);
+                    const bT = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    bT.setAttribute("x", x + 18); bT.setAttribute("y", y - 7);
+                    bT.setAttribute("text-anchor", "middle"); bT.setAttribute("fill", "#fff");
+                    bT.style.fontSize = "9px"; bT.style.fontWeight = "bold";
+                    bT.textContent = localUnits.length;
+                    g.appendChild(bT);
+                }
+
+                // Fleet Icon
+                if (hasFleets) {
+                    const icon = document.createElementNS("http://www.w3.org/2000/svg", "image");
+                    icon.setAttributeNS('http://www.w3.org/1999/xlink', 'href', FLEET_ICON_URL);
+                    icon.setAttribute("x", x - 32); icon.setAttribute("y", y - 18);
+                    icon.setAttribute("height", "20"); icon.setAttribute("width", "20");
+                    g.appendChild(icon);
+                }
+
+                g.addEventListener('mouseenter', (e) => showPanel(e, p, localUnits));
+                g.addEventListener('mousemove', movePanel);
+                g.addEventListener('mouseleave', hidePanel);
+
+                g.appendChild(circle); g.appendChild(text); svg.appendChild(g);
+            } catch (err) {
+                log(`Error rendering planet ${index}: ${err.message}`, true);
             }
-
-            if (hasFleets) {
-                const icon = document.createElementNS("http://www.w3.org/2000/svg", "image");
-                icon.setAttributeNS('http://www.w3.org/1999/xlink', 'href', FLEET_ICON_URL);
-                icon.setAttribute("x", x - 32); icon.setAttribute("y", y - 18);
-                icon.setAttribute("height", "20"); icon.setAttribute("width", "20");
-                g.appendChild(icon);
-            }
-
-            g.addEventListener('mouseenter', (e) => showPanel(e, p, localUnits));
-            g.addEventListener('mousemove', movePanel);
-            g.addEventListener('mouseleave', hidePanel);
-
-            g.appendChild(circle); g.appendChild(text); svg.appendChild(g);
         });
+        log("Render Complete.");
     }
 
     const panel = document.getElementById('info-panel');
-
     function showPanel(e, p, units) {
         const color = getVal(p, 'hexcolor') || '#fff';
         let unitsHtml = units.map(u => `
             <div class="unit-item" style="border-color:${getVal(u, 'hexcolor') || '#666'}">
-                <strong>${(getVal(u, 'name') || 'Unnamed Unit').toUpperCase()}</strong><br>
-                <span style="font-size:0.8em; opacity:0.8;">${getVal(u, 'type') || 'Unknown'} • STRENGTH: ${getVal(u, 'strength') || '0'}</span>
+                <strong>${(getVal(u, 'name') || 'Unnamed').toUpperCase()}</strong><br>
+                <span style="font-size:0.8em; opacity:0.8;">${getVal(u, 'type')} • STR: ${getVal(u, 'strength')}</span>
             </div>
         `).join('') || '<div style="opacity:0.5">No military presence.</div>';
 
         panel.innerHTML = `
-            <div class="panel-header">
+            <div style="border-bottom:2px solid #00d2ff; margin-bottom:12px; padding-bottom:5px;">
                 <div style="font-size:1.3em; font-weight:bold; color:${color}">${(getVal(p, 'name') || 'Unknown').toUpperCase()}</div>
-                <div style="font-size:0.75em; opacity:0.6; letter-spacing:1px;">COORDINATES: ${getVal(p, 'x')}, ${getVal(p, 'y')}</div>
+                <div style="font-size:0.75em; opacity:0.6;">LOC: ${getVal(p, 'x')}, ${getVal(p, 'y')}</div>
             </div>
-            <div style="margin: 8px 0; font-size:0.9em;">
-                <div><strong>OWNER:</strong> ${(getVal(p, 'owner') || 'None').toUpperCase()}</div>
-                <div><strong>STATUS:</strong> ${(getVal(p, 'status') || 'Idle').toUpperCase()}</div>
-            </div>
-            <div style="margin-top:15px;">
-                <div style="font-size:0.7em; font-weight:bold; color:#00d2ff; margin-bottom:5px;">TACTICAL READOUT:</div>
-                ${unitsHtml}
-            </div>
+            <div style="font-size:0.9em;"><strong>OWNER:</strong> ${(getVal(p, 'owner') || 'None').toUpperCase()}</div>
+            <div style="margin-top:15px; font-size:0.7em; font-weight:bold; color:#00d2ff;">TACTICAL READOUT:</div>
+            ${unitsHtml}
         `;
         panel.style.display = 'block';
     }
-
     function movePanel(e) { panel.style.left = (e.pageX + 20) + 'px'; panel.style.top = (e.pageY + 20) + 'px'; }
     function hidePanel() { panel.style.display = 'none'; }
 
